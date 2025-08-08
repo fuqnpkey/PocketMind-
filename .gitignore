@@ -1,11 +1,33 @@
-# Built files
+# Build outputs
 /bin/
 /build/
 *.apk
 *.aab
+*.aar
+*.so  # Keep if using NDK
 
 # Local config
 local.properties
+*.keystore  # Remove if not signing APKs
+*.jks       # Remove if not signing APKs
+
+# Codemagic CI/CD
+codemagic.yaml
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
 
 # Logs
 *.log
+
+# IDE
+.idea/
+*.iml
+.vscode/  # Only if using VS Code
+
+# OS metadata
+.DS_Store
+*.swp
+
+# Gradle cache
+.gradle/
