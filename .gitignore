@@ -1,33 +1,55 @@
-# Build outputs
-/bin/
+# =============================================
+# Android Studio & Gradle (Core)
+# =============================================
 /build/
+/bin/
+/outputs/
 *.apk
 *.aab
 *.aar
-*.so  # Keep if using NDK
-
-# Local config
+.gradle/
 local.properties
-*.keystore  # Remove if not signing APKs
-*.jks       # Remove if not signing APKs
+*.keystore
+*.jks
 
-# Codemagic CI/CD
+# =============================================
+# Native Development (NDK)
+# =============================================
+**/*.so
+**/*.o
+**/*.a
+obj/
+
+# =============================================
+# Codemagic CI/CD Specific
+# =============================================
 codemagic.yaml
 fastlane/report.xml
 fastlane/Preview.html
-fastlane/screenshots
+fastlane/screenshots/
+codemagic_build.log
 
-# Logs
-*.log
-
-# IDE
+# =============================================
+# IDE & Editor Configurations
+# =============================================
 .idea/
 *.iml
-.vscode/  # Only if using VS Code
-
-# OS metadata
-.DS_Store
+.vscode/
 *.swp
+*.swo
 
-# Gradle cache
-.gradle/
+# =============================================
+# System & OS Metadata
+# =============================================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# =============================================
+# Debug & Test Artifacts
+# =============================================
+**/__pycache__/
+*.pyc
+*.test
+.metadata/
