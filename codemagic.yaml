@@ -29,41 +29,93 @@ workflows:
           include: true
 
     scripts:
-      - name: Android Tools Setup
+      - name: Android Environment Setup
         script: |
-          # Debug: Show environment
+          # ===== Environment Diagnostics =====
+          echo "=== System Environment ==="
+          echo "Java version:"
+          java -version
           echo "Android SDK root: $CM_ANDROID_SDK_ROOT"
-          ls $CM_ANDROID_SDK_ROOT
           
-          # Find and use cmdline-tools
-          CMDLINE_TOOLS_DIR=$(find $CM_ANDROID_SDK_ROOT/cmdline-tools -maxdepth 1 -type d -name 'latest' -o -name '[0-9]*' | head -1)
-          export PATH=$PATH:$CMDLINE_TOOLS_DIR/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          # ===== SDK Structure Verification =====
+          echo "=== SDK Directory Structure ==="
+          if [ ! -d "$CM_ANDROID_SDK_ROOT" ]; then
+            echo "ERROR: Android SDK directory not found"
+            exit 1
+          fi
           
-          # Verify tools
-          which sdkmanager || { echo "sdkmanager path: $(which sdkmanager)"; exit 1; }
-          which apkanalyzer || { echo "apkanalyzer path: $(which apkanalyzer)"; exit 1; }
+          ls -la $CM_ANDROID_SDK_ROOT || echo "Failed to list SDK contents"
           
-          # Install components
+          # ===== Tool Discovery =====
+          echo "=== Locating Android Tools ==="
+          SDKMANAGER_PATH=$(
+            find $CM_ANDROID_SDK_ROOT \
+              -type f -name "sdkmanager" \
+              -print \
+              -quit 2>/dev/null
+          )
+          
+          if [ -z "$SDKMANAGER_PATH" ]; then
+            echo "ERROR: sdkmanager not found in:"
+            find $CM_ANDROID_SDK_ROOT -type d -name "bin" || echo "No bin directories found"
+            exit 1
+          fi
+          
+          echo "sdkmanager found at: $SDKMANAGER_PATH"
+          SDKMANAGER_DIR=$(dirname "$SDKMANAGER_PATH")
+          
+          # ===== PATH Configuration =====
+          export PATH=$PATH:$SDKMANAGER_DIR:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          echo "Final PATH: $PATH"
+          
+          # ===== Tool Verification =====
+          REQUIRED_TOOLS=("sdkmanager" "apkanalyzer" "adb")
+          for tool in "${REQUIRED_TOOLS[@]}"; do
+            if ! command -v $tool >/dev/null 2>&1; then
+              echo "ERROR: $tool not found in PATH"
+              echo "Searched in: $PATH"
+              exit 1
+            fi
+            echo "$tool located at: $(which $tool)"
+          done
+          
+          # ===== SDK Component Setup =====
+          echo "=== Installing Android Components ==="
           yes | sdkmanager --licenses
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --verbose \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "platform-tools" \
+            "cmdline-tools;latest"
+            
+          echo "=== Installed Components ==="
+          sdkmanager --list_installed
 
-      - name: Build and Verify
+      - name: Build and Sign
         script: |
-          # Re-establish PATH
-          CMDLINE_TOOLS_DIR=$(find $CM_ANDROID_SDK_ROOT/cmdline-tools -maxdepth 1 -type d -name 'latest' -o -name '[0-9]*' | head -1)
-          export PATH=$PATH:$CMDLINE_TOOLS_DIR/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          # Re-establish PATH in case new shell
+          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
           
+          echo "=== Building Release APK ==="
           ./gradlew clean assemble${BUILD_TYPE}
+          
+          echo "=== Running Lint Checks ==="
           ./gradlew lintRelease
+          
+          echo "=== Verifying APK Contents ==="
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
           apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
 
-      - name: Security Check
+      - name: Security Verification
         script: |
+          echo "=== Running Security Checks ==="
           if grep -r "android:debuggable=\"true\"" app/src/main/AndroidManifest.xml; then
             echo "ERROR: Release build must not be debuggable!"
             exit 1
           fi
+          
+          echo "=== Checking Signing ==="
+          apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 
     artifacts:
       - app/build/outputs/apk/**/*.apk
