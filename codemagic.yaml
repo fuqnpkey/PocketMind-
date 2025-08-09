@@ -6,8 +6,8 @@ caches:
       - ~/.gradle/wrapper
   - key: android-sdk-34
     paths:
-      - $ANDROID_HOME/platforms/android-34
-      - $ANDROID_HOME/build-tools/34.0.0
+      - $CM_ANDROID_SDK_ROOT/platforms/android-34
+      - $CM_ANDROID_SDK_ROOT/build-tools/34.0.0
 
 workflows:
   android-release:
@@ -16,30 +16,29 @@ workflows:
     
     environment:
       groups:
-        - android_signing  # Contains keystore credentials
+        - android_signing
       vars:
-        ANDROID_HOME: /opt/android-sdk-linux
         BUILD_TYPE: "release"
       java: 17
 
     triggering:
       events:
         - tag
-      branch_patterns:
+      branch_patterns:  # Changed from branch-patterns to branch_patterns
         - pattern: main
           include: true
 
     scripts:
-      # Proper Android SDK setup with path configuration
       - name: Set up Android SDK
         script: |
-          export PATH=$PATH:$CM_ANDROID_HOME/cmdline-tools/latest/bin:$CM_ANDROID_HOME/platform-tools
+          # Using Codemagic's preconfigured environment
+          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build and Verify
         script: |
-          ./gradlew clean assemble$BUILD_TYPE
+          ./gradlew clean assemble${BUILD_TYPE}
           ./gradlew lintRelease
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
           apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
