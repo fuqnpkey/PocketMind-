@@ -1,3 +1,4 @@
+# Global cache configuration
 caches:
   - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
     paths:
@@ -15,7 +16,7 @@ workflows:
     
     environment:
       groups:
-        - android_signing
+        - android_signing  # Contains keystore credentials
       vars:
         ANDROID_HOME: /opt/android-sdk-linux
         BUILD_TYPE: "release"
@@ -24,19 +25,21 @@ workflows:
     triggering:
       events:
         - tag
-      branch_patterns:  # Fixed from branch-patterns
+      branch_patterns:
         - pattern: main
           include: true
 
     scripts:
+      # Proper Android SDK setup with path configuration
       - name: Set up Android SDK
         script: |
+          export PATH=$PATH:$CM_ANDROID_HOME/cmdline-tools/latest/bin:$CM_ANDROID_HOME/platform-tools
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build and Verify
         script: |
-          ./gradlew clean assemble${BUILD_TYPE}
+          ./gradlew clean assemble$BUILD_TYPE
           ./gradlew lintRelease
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
           apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
