@@ -22,14 +22,14 @@ workflows:
           include: true
 
     caches:
-      - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
-        paths:
+      - paths:
           - ~/.gradle/caches
           - ~/.gradle/wrapper
-      - key: android-sdk-34
-        paths:
+        key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+      - paths:
           - $ANDROID_HOME/platforms/android-34
           - $ANDROID_HOME/build-tools/34.0.0
+        key: android-sdk-34
 
     scripts:
       - name: Set up Android SDK
@@ -62,9 +62,11 @@ workflows:
       email:
         recipients:
           - joepk062@gmail.com
-        subject: "PocketMind Release: v${CM_TAG:-$CM_BRANCH}"
-        body: |
-          Build #$CM_BUILD_NUMBER
-          Status: $CM_BUILD_STATUS
-          Commit: ${CM_COMMIT:0:7}
-          View Logs: $CM_BUILD_URL
+
+    notifications:
+      email:
+        recipients:
+          - joepk062@gmail.com
+        notify:
+          success: true
+          failure: true
