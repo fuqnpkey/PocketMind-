@@ -1,13 +1,14 @@
-# Global cache configuration
+# Cache configuration optimized for Codemagic
 caches:
   - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
     paths:
       - ~/.gradle/caches
       - ~/.gradle/wrapper
-  - key: android-sdk-34
+  - key: android-sdk-34-components
     paths:
       - $ANDROID_HOME/platforms/android-34
       - $ANDROID_HOME/build-tools/34.0.0
+      - $ANDROID_HOME/platform-tools
 
 workflows:
   android-release:
@@ -16,72 +17,43 @@ workflows:
     
     environment:
       groups:
-        - android_signing
+        - android_signing  # Contains:
+          # KEYSTORE (file)
+          # KEYSTORE_PASSWORD
+          # KEY_ALIAS
+          # KEY_PASSWORD
       vars:
-        BUILD_TYPE: "release"
-        # Use standard environment variables
-        ANDROID_HOME: /usr/local/lib/android/sdk
+        BUILD_TYPE: "release"  # lowercase for consistency, scripts will capitalize where needed
+        ANDROID_HOME: /opt/android-sdk
       java: 17
 
     triggering:
       events:
+        - push
         - tag
       branch_patterns:
         - pattern: main
           include: true
+        - pattern: release/*  # Optional: Add other release branches
+          include: true
 
     scripts:
-      - name: Android Environment Setup
+      - name: Android SDK Setup
         script: |
-          # ===== Environment Verification =====
-          echo "=== System Environment ==="
-          echo "Java version:"
+          set -e
+          echo "=== Java Environment ==="
           java -version
           
-          # ===== SDK Path Configuration =====
-          # Try multiple possible SDK locations
-          POSSIBLE_SDK_PATHS=(
-            "$ANDROID_HOME"
-            "$CM_ANDROID_SDK_ROOT"
-            "/usr/local/lib/android/sdk"
-            "/opt/android-sdk"
-          )
+          export ANDROID_HOME=/opt/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
           
-          for SDK_PATH in "${POSSIBLE_SDK_PATHS[@]}"; do
-            if [ -d "$SDK_PATH" ]; then
-              export ANDROID_HOME=$SDK_PATH
-              export CM_ANDROID_SDK_ROOT=$SDK_PATH
-              break
-            fi
-          done
-          
-          if [ ! -d "$ANDROID_HOME" ]; then
-            echo "ERROR: Android SDK not found in any standard location"
-            echo "Searched paths:"
-            printf "  - %s\n" "${POSSIBLE_SDK_PATHS[@]}"
-            exit 1
-          fi
-          
-          echo "Using Android SDK at: $ANDROID_HOME"
-          echo "SDK contents:"
-          ls -la "$ANDROID_HOME" || echo "Could not list SDK contents"
-          
-          # ===== Tool Discovery =====
-          CMDLINE_TOOLS_PATH=$(find "$ANDROID_HOME/cmdline-tools" -name "sdkmanager" 2>/dev/null | head -1)
-          if [ -n "$CMDLINE_TOOLS_PATH" ]; then
-            export PATH=$PATH:$(dirname "$CMDLINE_TOOLS_PATH"):$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
-          else
-            echo "WARNING: cmdline-tools not found, trying legacy tools location"
-            export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
-          fi
-          
-          # ===== Verify Tools =====
           if ! command -v sdkmanager >/dev/null 2>&1; then
-            echo "ERROR: sdkmanager not found in PATH: $PATH"
+            echo "ERROR: sdkmanager not found. Possible solutions:"
+            echo "1. Enable 'Android SDK Command-line Tools' in Codemagic build settings"
+            echo "2. Check build machine type supports Android"
             exit 1
           fi
           
-          # ===== SDK Setup =====
           echo "=== Installing Android Components ==="
           yes | sdkmanager --licenses
           sdkmanager --verbose \
@@ -90,27 +62,36 @@ workflows:
             "platform-tools" \
             "cmdline-tools;latest"
 
-      - name: Build and Sign
+      - name: Build and Analyze
         script: |
-          # Re-establish environment
+          set -e
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
           
           echo "=== Building Release APK ==="
-          ./gradlew clean assemble${BUILD_TYPE}
+          ./gradlew clean assemble${BUILD_TYPE^}
           
-          echo "=== Verifying APK ==="
-          apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
+          echo "=== Running Quality Checks ==="
+          ./gradlew lint${BUILD_TYPE^}
+          
+          echo "=== APK Analysis ==="
+          $ANDROID_HOME/build-tools/34.0.0/apkanalyzer apk summary app/build/outputs/apk/${BUILD_TYPE}/app-${BUILD_TYPE}.apk
+          $ANDROID_HOME/build-tools/34.0.0/apkanalyzer files list app/build/outputs/apk/${BUILD_TYPE}/app-${BUILD_TYPE}.apk | grep lib/arm64-v8a/
 
       - name: Security Verification
         script: |
-          if grep -r "android:debuggable=\"true\"" app/src/main/AndroidManifest.xml; then
+          set -e
+          echo "=== Security Checks ==="
+          if grep -r 'android:debuggable="true"' app/src/main/AndroidManifest.xml; then
             echo "ERROR: Release build must not be debuggable!"
             exit 1
           fi
+          
+          apksigner verify --print-certs app/build/outputs/apk/${BUILD_TYPE}/app-${BUILD_TYPE}.apk
 
     artifacts:
       - app/build/outputs/apk/**/*.apk
-      - app/build/outputs/mapping/release/**/mapping.txt
+      - app/build/outputs/mapping/${BUILD_TYPE}/**/mapping.txt
+      - app/build/reports/**/*
 
     publishing:
       email:
