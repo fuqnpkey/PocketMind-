@@ -1,67 +1,96 @@
-# Top-level caches configuration
+# A basic template for a Flutter app on Codemagic CI/CD.
+# Customize it for your specific project needs.
+# For more options and detailed documentation, visit https://docs.codemagic.io/yaml-basic-configuration/yaml-getting-started/
+
+# 'caches' is a top-level keyword, just like 'workflows'.
+# The previous version had a typo 'Workflows', which is case-sensitive.
 caches:
+  # The 'key' and 'paths' are correctly defined.
+  # The use of checksum is a great way to invalidate the cache when the gradle wrapper changes.
   - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
     paths:
       - ~/.gradle/caches
       - ~/.gradle/wrapper
+  
+  # A separate cache for the Android SDK is a good idea.
+  # You could also use the official Codemagic cache.
   - key: android-sdk-34
     paths:
       - $ANDROID_HOME/platforms/android-34
       - $ANDROID_HOME/build-tools/34.0.0
 
-Workflows:  # Note the capital 'W' as per Codemagic standard
+# The keyword for defining workflows is 'workflows' (lowercase).
+workflows:
+  # The workflow name should be a valid key.
   android-release:
     name: Android Release Build
     max_build_duration: 120
+    
     environment:
+      # 'groups' is correctly used to reference the secrets group.
       groups:
-        - android_signing  # Store these in Codemagic UI:
-          # KEYSTORE (file)
-          # KEYSTORE_PASSWORD
-          # KEY_ALIAS
-          # KEY_PASSWORD
+        - android_signing
+      
+      # 'vars' is correctly used.
       vars:
+        # Codemagic provides ANDROID_HOME by default, so this might be redundant,
+        # but it's not incorrect to specify it.
         ANDROID_HOME: /opt/android-sdk-linux
         BUILD_TYPE: "release"
+      
+      # 'java' is a valid top-level key under 'environment'.
       java: 17
 
+    # 'triggering' is a valid key at this level.
     triggering:
       events:
         - tag
-      branch_patterns:
+      # 'branch_patterns' should be 'branch-patterns' with a hyphen.
+      # Also, the pattern matching is defined under a key.
+      branch-patterns:
         - pattern: main
           include: true
 
+    # 'scripts' is a top-level key under the workflow definition.
     scripts:
       - name: Set up Android SDK
         script: |
           yes | sdkmanager --licenses
+          # The paths in the cache configuration rely on these being installed.
+          # You might not need to install these if you rely on a pre-cached image.
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build and Verify
         script: |
-          ./gradlew clean assemble$BUILD_TYPE
+          # A good practice is to use `./gradlew` to ensure the correct wrapper is used.
+          # The `assemble$BUILD_TYPE` is a good use of the variable.
+          ./gradlew clean assemble${BUILD_TYPE}
           ./gradlew lintRelease
+          # The paths here should be checked for correctness in your project.
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
           apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
 
       - name: Security Check
         script: |
+          # This is a solid check.
           if grep -r "android:debuggable=\"true\"" app/src/main/AndroidManifest.xml; then
             echo "ERROR: Release build must not be debuggable!"
             exit 1
           fi
 
+    # 'artifacts' is a top-level key under the workflow definition.
     artifacts:
       - app/build/outputs/apk/**/*.apk
       - app/build/outputs/mapping/release/**/mapping.txt
       - app/build/reports/**/*
 
+    # The 'publishing' keyword should be a top-level key under the workflow definition.
     publishing:
       email:
         recipients:
           - joepk062@gmail.com
 
+# The 'notifications' keyword is a top-level key in the file, outside of any workflow.
 notifications:
   email:
     recipients:
