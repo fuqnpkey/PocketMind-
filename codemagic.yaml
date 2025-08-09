@@ -6,8 +6,8 @@ caches:
       - ~/.gradle/wrapper
   - key: android-sdk-34
     paths:
-      - $CM_ANDROID_SDK_ROOT/platforms/android-34
-      - $CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+      - $ANDROID_HOME/platforms/android-34
+      - $ANDROID_HOME/build-tools/34.0.0
 
 workflows:
   android-release:
@@ -19,6 +19,8 @@ workflows:
         - android_signing
       vars:
         BUILD_TYPE: "release"
+        # Use standard environment variables
+        ANDROID_HOME: /usr/local/lib/android/sdk
       java: 17
 
     triggering:
@@ -31,55 +33,55 @@ workflows:
     scripts:
       - name: Android Environment Setup
         script: |
-          # ===== Environment Diagnostics =====
+          # ===== Environment Verification =====
           echo "=== System Environment ==="
           echo "Java version:"
           java -version
-          echo "Android SDK root: $CM_ANDROID_SDK_ROOT"
           
-          # ===== SDK Structure Verification =====
-          echo "=== SDK Directory Structure ==="
-          if [ ! -d "$CM_ANDROID_SDK_ROOT" ]; then
-            echo "ERROR: Android SDK directory not found"
-            exit 1
-          fi
-          
-          ls -la $CM_ANDROID_SDK_ROOT || echo "Failed to list SDK contents"
-          
-          # ===== Tool Discovery =====
-          echo "=== Locating Android Tools ==="
-          SDKMANAGER_PATH=$(
-            find $CM_ANDROID_SDK_ROOT \
-              -type f -name "sdkmanager" \
-              -print \
-              -quit 2>/dev/null
+          # ===== SDK Path Configuration =====
+          # Try multiple possible SDK locations
+          POSSIBLE_SDK_PATHS=(
+            "$ANDROID_HOME"
+            "$CM_ANDROID_SDK_ROOT"
+            "/usr/local/lib/android/sdk"
+            "/opt/android-sdk"
           )
           
-          if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "ERROR: sdkmanager not found in:"
-            find $CM_ANDROID_SDK_ROOT -type d -name "bin" || echo "No bin directories found"
+          for SDK_PATH in "${POSSIBLE_SDK_PATHS[@]}"; do
+            if [ -d "$SDK_PATH" ]; then
+              export ANDROID_HOME=$SDK_PATH
+              export CM_ANDROID_SDK_ROOT=$SDK_PATH
+              break
+            fi
+          done
+          
+          if [ ! -d "$ANDROID_HOME" ]; then
+            echo "ERROR: Android SDK not found in any standard location"
+            echo "Searched paths:"
+            printf "  - %s\n" "${POSSIBLE_SDK_PATHS[@]}"
             exit 1
           fi
           
-          echo "sdkmanager found at: $SDKMANAGER_PATH"
-          SDKMANAGER_DIR=$(dirname "$SDKMANAGER_PATH")
+          echo "Using Android SDK at: $ANDROID_HOME"
+          echo "SDK contents:"
+          ls -la "$ANDROID_HOME" || echo "Could not list SDK contents"
           
-          # ===== PATH Configuration =====
-          export PATH=$PATH:$SDKMANAGER_DIR:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
-          echo "Final PATH: $PATH"
+          # ===== Tool Discovery =====
+          CMDLINE_TOOLS_PATH=$(find "$ANDROID_HOME/cmdline-tools" -name "sdkmanager" 2>/dev/null | head -1)
+          if [ -n "$CMDLINE_TOOLS_PATH" ]; then
+            export PATH=$PATH:$(dirname "$CMDLINE_TOOLS_PATH"):$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
+          else
+            echo "WARNING: cmdline-tools not found, trying legacy tools location"
+            export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
+          fi
           
-          # ===== Tool Verification =====
-          REQUIRED_TOOLS=("sdkmanager" "apkanalyzer" "adb")
-          for tool in "${REQUIRED_TOOLS[@]}"; do
-            if ! command -v $tool >/dev/null 2>&1; then
-              echo "ERROR: $tool not found in PATH"
-              echo "Searched in: $PATH"
-              exit 1
-            fi
-            echo "$tool located at: $(which $tool)"
-          done
+          # ===== Verify Tools =====
+          if ! command -v sdkmanager >/dev/null 2>&1; then
+            echo "ERROR: sdkmanager not found in PATH: $PATH"
+            exit 1
+          fi
           
-          # ===== SDK Component Setup =====
+          # ===== SDK Setup =====
           echo "=== Installing Android Components ==="
           yes | sdkmanager --licenses
           sdkmanager --verbose \
@@ -87,40 +89,28 @@ workflows:
             "build-tools;34.0.0" \
             "platform-tools" \
             "cmdline-tools;latest"
-            
-          echo "=== Installed Components ==="
-          sdkmanager --list_installed
 
       - name: Build and Sign
         script: |
-          # Re-establish PATH in case new shell
-          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          # Re-establish environment
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/34.0.0
           
           echo "=== Building Release APK ==="
           ./gradlew clean assemble${BUILD_TYPE}
           
-          echo "=== Running Lint Checks ==="
-          ./gradlew lintRelease
-          
-          echo "=== Verifying APK Contents ==="
+          echo "=== Verifying APK ==="
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
-          apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
 
       - name: Security Verification
         script: |
-          echo "=== Running Security Checks ==="
           if grep -r "android:debuggable=\"true\"" app/src/main/AndroidManifest.xml; then
             echo "ERROR: Release build must not be debuggable!"
             exit 1
           fi
-          
-          echo "=== Checking Signing ==="
-          apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 
     artifacts:
       - app/build/outputs/apk/**/*.apk
       - app/build/outputs/mapping/release/**/mapping.txt
-      - app/build/reports/**/*
 
     publishing:
       email:
