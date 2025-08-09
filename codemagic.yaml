@@ -1,0 +1,19 @@
+workflows:
+  android-release:
+    name: Android Release Build
+    max_build_duration: 60
+    environment:
+      vars:
+        ANDROID_HOME: /opt/android-sdk-linux
+      java: 17
+    scripts:
+      - name: Clean and assemble release
+        script: |
+          ./gradlew clean
+          ./gradlew assembleRelease
+    artifacts:
+      - app/build/outputs/**/*.apk
+    publishing:
+      email:
+        recipients:
+          - joepk062@gmail.com
