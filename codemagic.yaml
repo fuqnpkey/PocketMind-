@@ -1,19 +1,70 @@
 workflows:
   android-release:
     name: Android Release Build
-    max_build_duration: 60
+    max_build_duration: 120
     environment:
+      groups:
+        - android_signing  # Store these in Codemagic UI:
+          # KEYSTORE (file)
+          # KEYSTORE_PASSWORD
+          # KEY_ALIAS
+          # KEY_PASSWORD
       vars:
         ANDROID_HOME: /opt/android-sdk-linux
+        BUILD_TYPE: "release"
       java: 17
+
+    triggering:
+      events:
+        - tag  # Format: v1.0.0, v2.1.3, etc.
+      branch_patterns:
+        - pattern: main
+          include: true
+
+    caches:
+      - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+        paths:
+          - ~/.gradle/caches
+          - ~/.gradle/wrapper
+      - key: android-sdk-34
+        paths:
+          - $ANDROID_HOME/platforms/android-34
+          - $ANDROID_HOME/build-tools/34.0.0
+
     scripts:
-      - name: Clean and assemble release
+      - name: Set up Android SDK
         script: |
-          ./gradlew clean
-          ./gradlew assembleRelease
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build and Verify
+        script: |
+          ./gradlew clean assemble$BUILD_TYPE
+          ./gradlew lintRelease
+          
+          # Verify APK contains native libs
+          apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
+          apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
+
+      - name: Security Check
+        script: |
+          if grep -r "android:debuggable=\"true\"" app/src/main/AndroidManifest.xml; then
+            echo "ERROR: Release build must not be debuggable!"
+            exit 1
+          fi
+
     artifacts:
-      - app/build/outputs/**/*.apk
+      - app/build/outputs/apk/**/*.apk
+      - app/build/outputs/mapping/release/**/mapping.txt
+      - app/build/reports/**/*
+
     publishing:
       email:
         recipients:
           - joepk062@gmail.com
+        subject: "PocketMind Release: v${CM_TAG:-$CM_BRANCH}"
+        body: |
+          Build #$CM_BUILD_NUMBER
+          Status: $CM_BUILD_STATUS
+          Commit: ${CM_COMMIT:0:7}
+          View Logs: $CM_BUILD_URL
