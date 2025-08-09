@@ -1,4 +1,4 @@
-# Global cache configuration
+# Codemagic YAML - Optimized Android Release Pipeline
 caches:
   - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
     paths:
@@ -16,30 +16,34 @@ workflows:
     
     environment:
       groups:
-        - android_signing
+        - android_signing  # Contains FIREBASE_TOKEN and signing keys
       vars:
         BUILD_TYPE: "release"
+        FIREBASE_APP_ID: "1:1234567890:android:abcdefghijk"  # Replace with your actual ID
       java: 17
 
     triggering:
       events:
         - tag
-      branch_patterns:  # Changed from branch-patterns to branch_patterns
+      branch_patterns:
         - pattern: main
           include: true
 
     scripts:
-      - name: Set up Android SDK
+      - name: Environment Verification
         script: |
-          # Using Codemagic's preconfigured environment
-          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          echo "=== Environment Diagnostics ==="
+          echo "Java version: $(java -version 2>&1 | head -n 1)"
+          echo "Android SDK path: $CM_ANDROID_SDK_ROOT"
+          echo "PATH: $PATH"
+          ls -la $CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin
 
       - name: Build and Verify
         script: |
-          ./gradlew clean assemble${BUILD_TYPE}
+          ./gradlew clean assemble${BUILD_TYPE} --stacktrace --info
           ./gradlew lintRelease
+          
+          # APK analysis
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
           apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
 
@@ -49,6 +53,19 @@ workflows:
             echo "ERROR: Release build must not be debuggable!"
             exit 1
           fi
+
+      - name: Publish to Firebase
+        script: |
+          # Install Firebase CLI if not present
+          if ! command -v firebase &> /dev/null; then
+            npm install -g firebase-tools
+          fi
+          
+          firebase appdistribution:distribute \
+            app/build/outputs/apk/release/app-release.apk \
+            --app $FIREBASE_APP_ID \
+            --groups "testers" \
+            --token "$FIREBASE_TOKEN"
 
     artifacts:
       - app/build/outputs/apk/**/*.apk
@@ -64,3 +81,6 @@ notifications:
   email:
     recipients:
       - joepk062@gmail.com
+  slack:
+    - channel: '#android-builds'
+      notify_on_build_start: true
