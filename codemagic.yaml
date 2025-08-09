@@ -1,4 +1,4 @@
-# Codemagic YAML - Optimized Android Release Pipeline
+# Global cache configuration
 caches:
   - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
     paths:
@@ -16,10 +16,9 @@ workflows:
     
     environment:
       groups:
-        - android_signing  # Contains FIREBASE_TOKEN and signing keys
+        - android_signing
       vars:
         BUILD_TYPE: "release"
-        FIREBASE_APP_ID: "1:1234567890:android:abcdefghijk"  # Replace with your actual ID
       java: 17
 
     triggering:
@@ -30,17 +29,25 @@ workflows:
           include: true
 
     scripts:
-      - name: Environment Verification
+      - name: Android Environment Setup
         script: |
-          echo "=== Environment Diagnostics ==="
-          echo "Java version: $(java -version 2>&1 | head -n 1)"
-          echo "Android SDK path: $CM_ANDROID_SDK_ROOT"
-          echo "PATH: $PATH"
-          ls -la $CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+          # Configure Android SDK paths
+          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          
+          # Verify tools are available
+          command -v sdkmanager >/dev/null || { echo "sdkmanager not found"; exit 1; }
+          command -v apkanalyzer >/dev/null || { echo "apkanalyzer not found"; exit 1; }
+          
+          # Accept licenses and install components
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Build and Verify
+      - name: Build and Release
         script: |
-          ./gradlew clean assemble${BUILD_TYPE} --stacktrace --info
+          # Ensure PATH persists from previous step
+          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          
+          ./gradlew clean assemble${BUILD_TYPE}
           ./gradlew lintRelease
           
           # APK analysis
@@ -53,19 +60,6 @@ workflows:
             echo "ERROR: Release build must not be debuggable!"
             exit 1
           fi
-
-      - name: Publish to Firebase
-        script: |
-          # Install Firebase CLI if not present
-          if ! command -v firebase &> /dev/null; then
-            npm install -g firebase-tools
-          fi
-          
-          firebase appdistribution:distribute \
-            app/build/outputs/apk/release/app-release.apk \
-            --app $FIREBASE_APP_ID \
-            --groups "testers" \
-            --token "$FIREBASE_TOKEN"
 
     artifacts:
       - app/build/outputs/apk/**/*.apk
@@ -81,6 +75,3 @@ notifications:
   email:
     recipients:
       - joepk062@gmail.com
-  slack:
-    - channel: '#android-builds'
-      notify_on_build_start: true
