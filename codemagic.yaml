@@ -24,7 +24,7 @@ workflows:
     triggering:
       events:
         - tag
-      branch-patterns:
+      branch_patterns:  # Fixed from branch-patterns
         - pattern: main
           include: true
 
