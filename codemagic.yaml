@@ -21,14 +21,17 @@ workflows:
         - pattern: main
           include: true
 
-    # Fixed cache section (now validates correctly)
+    # Correct cache configuration for Codemagic
     caching:
-      paths:
-        - ~/.gradle/caches
-        - ~/.gradle/wrapper
-        - $ANDROID_HOME/platforms/android-34
-        - $ANDROID_HOME/build-tools/34.0.0
-      cache_per_branch: true
+      - paths:
+          - ~/.gradle/caches
+          - ~/.gradle/wrapper
+        key: gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+      
+      - paths:
+          - $ANDROID_HOME/platforms/android-34
+          - $ANDROID_HOME/build-tools/34.0.0
+        key: android-sdk-34
 
     scripts:
       - name: Set up Android SDK
