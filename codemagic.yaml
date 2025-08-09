@@ -4,7 +4,7 @@ workflows:
     max_build_duration: 120
     environment:
       groups:
-        - android_signing  # Store in Codemagic UI:
+        - android_signing  # Store these in Codemagic UI:
           # KEYSTORE (file)
           # KEYSTORE_PASSWORD
           # KEY_ALIAS
@@ -21,17 +21,16 @@ workflows:
         - pattern: main
           include: true
 
-    # Correct cache configuration for Codemagic
-    caching:
-      - paths:
+    # Proper cache configuration
+    caches:
+      - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+        paths:
           - ~/.gradle/caches
           - ~/.gradle/wrapper
-        key: gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
-      
-      - paths:
+      - key: android-sdk-34
+        paths:
           - $ANDROID_HOME/platforms/android-34
           - $ANDROID_HOME/build-tools/34.0.0
-        key: android-sdk-34
 
     scripts:
       - name: Set up Android SDK
