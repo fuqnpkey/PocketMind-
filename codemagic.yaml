@@ -1,4 +1,15 @@
-workflows:
+# Top-level caches configuration
+caches:
+  - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+    paths:
+      - ~/.gradle/caches
+      - ~/.gradle/wrapper
+  - key: android-sdk-34
+    paths:
+      - $ANDROID_HOME/platforms/android-34
+      - $ANDROID_HOME/build-tools/34.0.0
+
+Workflows:  # Note the capital 'W' as per Codemagic standard
   android-release:
     name: Android Release Build
     max_build_duration: 120
@@ -20,17 +31,6 @@ workflows:
       branch_patterns:
         - pattern: main
           include: true
-
-    # Proper cache configuration
-    caches:
-      - key: gradle-cache-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
-        paths:
-          - ~/.gradle/caches
-          - ~/.gradle/wrapper
-      - key: android-sdk-34
-        paths:
-          - $ANDROID_HOME/platforms/android-34
-          - $ANDROID_HOME/build-tools/34.0.0
 
     scripts:
       - name: Set up Android SDK
