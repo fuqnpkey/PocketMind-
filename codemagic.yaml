@@ -29,28 +29,32 @@ workflows:
           include: true
 
     scripts:
-      - name: Android Environment Setup
+      - name: Android Tools Setup
         script: |
-          # Configure Android SDK paths
-          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          # Debug: Show environment
+          echo "Android SDK root: $CM_ANDROID_SDK_ROOT"
+          ls $CM_ANDROID_SDK_ROOT
           
-          # Verify tools are available
-          command -v sdkmanager >/dev/null || { echo "sdkmanager not found"; exit 1; }
-          command -v apkanalyzer >/dev/null || { echo "apkanalyzer not found"; exit 1; }
+          # Find and use cmdline-tools
+          CMDLINE_TOOLS_DIR=$(find $CM_ANDROID_SDK_ROOT/cmdline-tools -maxdepth 1 -type d -name 'latest' -o -name '[0-9]*' | head -1)
+          export PATH=$PATH:$CMDLINE_TOOLS_DIR/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
           
-          # Accept licenses and install components
+          # Verify tools
+          which sdkmanager || { echo "sdkmanager path: $(which sdkmanager)"; exit 1; }
+          which apkanalyzer || { echo "apkanalyzer path: $(which apkanalyzer)"; exit 1; }
+          
+          # Install components
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Build and Release
+      - name: Build and Verify
         script: |
-          # Ensure PATH persists from previous step
-          export PATH=$PATH:$CM_ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
+          # Re-establish PATH
+          CMDLINE_TOOLS_DIR=$(find $CM_ANDROID_SDK_ROOT/cmdline-tools -maxdepth 1 -type d -name 'latest' -o -name '[0-9]*' | head -1)
+          export PATH=$PATH:$CMDLINE_TOOLS_DIR/bin:$CM_ANDROID_SDK_ROOT/platform-tools:$CM_ANDROID_SDK_ROOT/build-tools/34.0.0
           
           ./gradlew clean assemble${BUILD_TYPE}
           ./gradlew lintRelease
-          
-          # APK analysis
           apkanalyzer apk summary app/build/outputs/apk/release/app-release.apk
           apkanalyzer files list app/build/outputs/apk/release/app-release.apk | grep lib/arm64-v8a/
 
